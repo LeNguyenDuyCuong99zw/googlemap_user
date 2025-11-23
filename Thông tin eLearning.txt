@@ -1,0 +1,77 @@
+THÔNG TIN SINH VIÊN
+- Họ và tên: Lê Nguyễn Duy Cường 
+- MSSV: 080205008616
+- Lớp: CN2303B
+- Email: duycuong9897@gmail.com
+
+ĐỀ TÀI BÁO CÁO
+- Tên đề tài: obtaining the user’s current location của chapter 7 Android Permissions and Google Maps 
+ book How to Build Android Applications with Kotlin 
+
+
+THÔNG TIN SOURCE CODE
+- Package name: com.example.catagentdeployer
+- Phiên bản: versionName = 1.0, versionCode = 1
+- Android SDK: compileSdk = 36, targetSdk = 36, minSdk = 24
+- Ngôn ngữ: Kotlin, Jetpack Compose
+- Module chính: `app`
+- Main activity: `com.example.catagentdeployer.MainActivity`
+- Thư viện chính:
+  - Google Play Services Maps: com.google.android.gms:play-services-maps:18.2.0
+  - Google Maps Compose (google.maps.android.compose)
+  - Play Services Location (fused location)
+  - AndroidX Compose, Material3
+  - Secrets Gradle Plugin để quản lý `MAPS_API_KEY`
+- Tệp cấu hình API key: plugin cấu hình dùng `secrets.properties` và `local.defaults.properties` (xem `app/build.gradle.kts`)
+- Quyền yêu cầu: `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`
+
+LINK GIT DỰ ÁN
+- Link Git: https://github.com/LeNguyenDuyCuong99zw/googlemap_user.git
+
+MÔ TẢ NGẮN GỌN
+Ứng dụng là một ví dụ đơn giản dùng Google Maps và Jetpack Compose. Ứng dụng sẽ:
+- Yêu cầu quyền vị trí (fine/coarse) từ người dùng.
+- Lấy vị trí hiện tại bằng FusedLocationProvider và di chuyển camera về vị trí đó.
+- Cho phép người dùng chạm vào bản đồ để đặt một marker (tiêu đề: "Deploy Here").
+- Sử dụng một vector drawable (`res/drawable/target_icon.xml`) làm icon marker.
+- Hiển thị nút để lấy vị trí hiện tại và hiển thị toạ độ hiện tại trong text của nút.
+
+CÁCH CÀI ĐẶT (BASIC INSTALL)
+Yêu cầu trước:
+- Android Studio (hoặc Gradle trên máy có Android SDK).
+- JDK 11 (hoặc tương thích với `sourceCompatibility = JavaVersion.VERSION_11`).
+- Android SDK Platform 36 và Google Play services.
+- Google Maps API Key (bật Maps SDK for Android, kích hoạt billing nếu cần theo chính sách Google).
+tạo API GGMAP
+
+https://console.cloud.google.com
+Bật API giúp mở GGMAP trên
+![alt text](image.png)
+
+Các bước:
+1. Clone hoặc tải repo về máy của bạn.
+2. Thêm API key vào tệp cấu hình bí mật. Có 2 lựa chọn (dùng 1 trong 2):
+   - Tạo tệp `secrets.properties` trong thư mục `ggmap_user` (module gốc) với nội dung:
+     MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY_HERE
+   - Hoặc chỉnh `local.defaults.properties` (đã có trong repo) và thêm dòng:
+     MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY_HERE
+
+3. Mở project bằng Android Studio: chọn `Open` -> thư mục `ggmap_user`.
+4. Đồng bộ/Sync Gradle. Gradle sẽ đọc `MAPS_API_KEY` và chèn vào `AndroidManifest` qua plugin bí mật.
+5. Kết nối thiết bị Android (hoặc khởi chạy AVD). Cấp quyền vị trí trên thiết bị khi ứng dụng yêu cầu.
+6. Chạy ứng dụng (Run) từ Android Studio hoặc dùng Gradle wrapper:
+
+PowerShell (từ thư mục `ggmap_user`):
+```
+.\gradlew.bat assembleDebug
+.\gradlew.bat installDebug
+```
+
+Lưu ý & khắc phục sự cố:
+- Nếu bản đồ chỉ hiện lưới hoặc thông báo "For development purposes only", kiểm tra lại API key, quyền API (Maps SDK for Android) và billing trên Google Cloud Console.
+- Nếu không lấy được vị trí, kiểm tra quyền runtime (cho phép Location) và trạng thái GPS/Network của thiết bị.
+
+FILE VÀ ĐƯỜNG DẪN LIÊN QUAN
+- `app/src/main/AndroidManifest.xml` (khai báo permission và meta-data `MAPS_API_KEY`)
+- `app/build.gradle.kts` (cấu hình plugin, dependencies, và secrets plugin)
+- `app/src/main/java/com/example/catagentdeployer/MainActivity.kt` (logic chính: quyền, lấy vị trí, hiển thị bản đồ và marker)
