@@ -15,7 +15,6 @@ const rateLimit = require('express-rate-limit');
 const placesRouter    = require('./routes/places');
 const favoritesRouter = require('./routes/favorites');
 const historyRouter   = require('./routes/history');
-const storageRouter   = require('./routes/storage');   // ☁️ Google Cloud Storage
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -71,7 +70,6 @@ app.get('/health', (_req, res) => {
 app.use('/places',    placesRouter);
 app.use('/favorites', favoritesRouter);
 app.use('/history',   historyRouter);
-app.use('/storage',   storageRouter);   // ☁️ Google Cloud Storage — upload/list/delete ảnh
 
 // ── 404 handler ───────────────────────────────────────────────────────────
 app.use((_req, res) => {
