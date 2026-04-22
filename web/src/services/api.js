@@ -91,4 +91,50 @@ export const getHistory = (limit = 20) =>
 export const clearHistory = () =>
   api.delete('/history');
 
+// ── ☁️ Google Cloud Storage APIs ────────────────────────
+
+/**
+ * Upload ảnh địa điểm lên Google Cloud Storage
+ * @param {File} file - File ảnh từ input
+ * @param {string} placeId - ID địa điểm
+ * @param {string} placeName - Tên địa điểm
+ */
+export const uploadPhoto = async (file, placeId, placeName) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('placeId', placeId);
+  formData.append('placeName', placeName);
+
+  // Lấy token riêng vì Content-Type phải là multipart/form-data
+  const { auth } = await import('../config/firebase');
+  const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+
+  const response = await fetch(
+    `${import.meta.env.VITE_API_BASE_URL || '/api'}/storage/upload`,
+    {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    }
+  );
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error || 'Upload thất bại');
+  }
+  return response.json();
+};
+
+/** Lấy danh sách ảnh đã upload (tùy chọn lọc theo placeId) */
+export const getUserPhotos = (placeId) =>
+  api.get('/storage/photos', { params: placeId ? { placeId } : {} });
+
+/** Xóa ảnh khỏi Cloud Storage */
+export const deletePhoto = (fileName) =>
+  api.delete(`/storage/photos/${encodeURIComponent(fileName)}`);
+
+/** Thông tin GCS bucket (dùng cho báo cáo / dashboard) */
+export const getStorageInfo = () =>
+  api.get('/storage/info');
+
 export default api;

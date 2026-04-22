@@ -29,7 +29,8 @@ gcloud services enable \
   run.googleapis.com \
   cloudbuild.googleapis.com \
   secretmanager.googleapis.com \
-  firestore.googleapis.com
+  firestore.googleapis.com \
+  storage.googleapis.com
 
 echo "✅ APIs enabled"
 ```
@@ -46,6 +47,46 @@ gcloud firestore databases create \
 
 echo "✅ Firestore created in asia-southeast1 (Singapore)"
 ```
+
+---
+
+## BƯỚC 1.5 — Tạo Google Cloud Storage Bucket
+
+```bash
+# Tạo bucket lưu ảnh địa điểm (Object Storage)
+gcloud storage buckets create gs://ggmap-place-photos \
+  --location=asia-southeast1 \
+  --default-storage-class=STANDARD \
+  --uniform-bucket-level-access
+
+echo "✅ GCS Bucket ggmap-place-photos created"
+
+# Cấp quyền đọc công khai cho ảnh (để hiển thị trực tiếp bằng public URL)
+gcloud storage buckets add-iam-policy-binding gs://ggmap-place-photos \
+  --member=allUsers \
+  --role=roles/storage.objectViewer
+
+echo "✅ Public read access enabled"
+
+# Cấp quyền ghi cho service account của Cloud Run
+gcloud storage buckets add-iam-policy-binding gs://ggmap-place-photos \
+  --member=serviceAccount:$(gcloud iam service-accounts list --filter="displayName:Compute Engine default" --format="value(email)") \
+  --role=roles/storage.objectAdmin
+
+echo "✅ Cloud Run service account has write access"
+```
+
+**Cấu trúc thư mục trong bucket:**
+```
+ggmap-place-photos/
+└── users/
+    └── {firebase_uid}/
+        └── places/
+            └── {placeId}/
+                └── {uuid}.jpg   ← ảnh địa điểm do user upload
+```
+
+**→ Free Tier GCS:** 5 GB storage + 1 GB egress/tháng — hoàn toàn miễn phí cho demo!
 
 **Trong Firebase Console**, bật Firestore và tạo rules:
 

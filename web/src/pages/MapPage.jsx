@@ -10,13 +10,12 @@
  * - Click vào bản đồ để đặt marker
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import {
   APIProvider,
   Map,
   Marker,
   InfoWindow,
-  useMap,
 } from '@vis.gl/react-google-maps';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -25,6 +24,7 @@ import {
   addFavorite,
   saveHistory,
 } from '../services/api';
+import PhotoUpload from '../components/PhotoUpload'; // ☁️ GCS Upload
 
 const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
@@ -35,7 +35,6 @@ const DEFAULT_CENTER = { lat: 10.7769, lng: 106.7009 };
 function MapView({ center, places, selectedPlace, clickedPos, onMapClick, onMarkerClick }) {
   return (
     <Map
-      mapId="ggmap-main"
       defaultCenter={center}
       defaultZoom={13}
       gestureHandling="greedy"
@@ -95,6 +94,7 @@ export default function MapPage() {
   const [activeTab,    setActiveTab]    = useState('search'); // 'search' | 'directions'
   const [loading,      setLoading]      = useState(false);
   const [toast,        setToast]        = useState('');
+  const [photoPlace,   setPhotoPlace]   = useState(null); // ☁️ GCS: địa điểm đang xem ảnh
 
   const showToast = (msg) => {
     setToast(msg);
@@ -163,7 +163,12 @@ export default function MapPage() {
   }, []);
 
   return (
-    <APIProvider apiKey={MAPS_API_KEY}>
+    <APIProvider
+      apiKey={MAPS_API_KEY}
+      libraries={['places', 'geometry']}
+      onLoad={() => console.log('✅ Google Maps loaded')}
+      onError={(e) => console.error('❌ Maps error:', e)}
+    >
       <div className="app-layout">
         {/* ── Sidebar ──────────────────────────────── */}
         <aside className="sidebar">
@@ -320,6 +325,15 @@ export default function MapPage() {
                       >
                         🤍
                       </button>
+                      <button
+                        id={`btn-photo-${idx}`}
+                        className="btn btn-ghost place-item__action"
+                        style={{ fontSize: 18, padding: 4 }}
+                        title="☁️ Upload ảnh lên Cloud Storage"
+                        onClick={(e) => { e.stopPropagation(); setPhotoPlace(place); }}
+                      >
+                        📷
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -352,6 +366,14 @@ export default function MapPage() {
 
       {/* Toast notification */}
       {toast && <div className="toast">{toast}</div>}
+
+      {/* ☁️ Google Cloud Storage — Photo Upload Modal */}
+      {photoPlace && (
+        <PhotoUpload
+          place={photoPlace}
+          onClose={() => setPhotoPlace(null)}
+        />
+      )}
     </APIProvider>
   );
 }
