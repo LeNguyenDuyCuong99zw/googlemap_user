@@ -1,261 +1,155 @@
+/**
+ * MainActivity.kt — Entry point của ứng dụng
+ *
+ * Luồng:
+ *  - Check Firebase auth → LoginScreen hoặc MainApp
+ *  - MainApp: Bottom Navigation giữa MapScreen và FavoritesScreen
+ */
+
 package com.example.catagentdeployer
 
-import android.Manifest
-import android.annotation.SuppressLint
-import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.location.Location
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.DrawableRes
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Text
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.*
+import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.core.content.ContextCompat
-import androidx.core.graphics.drawable.DrawableCompat
-import androidx.lifecycle.lifecycleScope
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.*
+import com.example.catagentdeployer.ui.*
 import com.example.catagentdeployer.ui.theme.CatAgentDeployerTheme
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY
-import com.google.android.gms.maps.model.BitmapDescriptor
-import com.google.android.gms.maps.model.BitmapDescriptorFactory
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.tasks.CancellationTokenSource
-import com.google.maps.android.compose.CameraPositionState
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.MarkerState
-import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.MapType
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import androidx.core.graphics.createBitmap
+import com.google.firebase.auth.FirebaseAuth
 
 class MainActivity : ComponentActivity() {
-    private val fusedLocationClient by lazy {
-        LocationServices.getFusedLocationProviderClient(this)
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            var locationPermissionsGranted by remember {
-                mutableStateOf(areLocationPermissionsGranted())
+            CatAgentDeployerTheme(darkTheme = true) {
+                GGMapApp()
             }
+        }
+    }
+}
 
-            var shouldShowLocationPermissionRationale by remember {
-                mutableStateOf(false)
+@Composable
+fun GGMapApp() {
+    val auth = FirebaseAuth.getInstance()
+    var isLoggedIn by remember { mutableStateOf(auth.currentUser != null) }
+
+    if (!isLoggedIn) {
+        LoginScreen(onLoginSuccess = { isLoggedIn = true })
+    } else {
+        val mapViewModel: MapViewModel = viewModel()
+        MainApp(
+            viewModel = mapViewModel,
+            userName = auth.currentUser?.displayName ?: auth.currentUser?.email ?: "",
+            onLogout = {
+                auth.signOut()
+                isLoggedIn = false
             }
+        )
+    }
+}
 
-            var currentUserLocation by remember {
-                mutableStateOf(LatLng(0.0, 0.0))
-            }
-            
-            fun getUserLocation() {
-                val cancellationTokenSource = CancellationTokenSource()
-                lifecycleScope.launch @SuppressLint("MissingPermission") {
-                    suspendCancellableCoroutine { continuation ->
-                        fusedLocationClient.getCurrentLocation(
-                            PRIORITY_HIGH_ACCURACY,
-                            cancellationTokenSource.token
-                        ).addOnSuccessListener { location: Location? ->
-                            if (location != null) {
-                                currentUserLocation = LatLng(location.latitude, location.longitude)
-                            }
-                        }
-                        continuation.invokeOnCancellation {
-                            cancellationTokenSource.cancel()
-                        }
-                    }
-                }
-            }
+// ── Bottom Navigation Setup ───────────────────────────────
+private sealed class Screen(
+    val route: String,
+    val label: String,
+    val selectedIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    val unselectedIcon: androidx.compose.ui.graphics.vector.ImageVector
+) {
+    object Map : Screen("map", "Bản đồ", Icons.Filled.Map, Icons.Outlined.Map)
+    object Favorites : Screen("favorites", "Yêu thích", Icons.Filled.Favorite, Icons.Outlined.FavoriteBorder)
+}
 
-            val requestLocationPermissionLauncher = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.RequestMultiplePermissions(),
-                onResult = { permissions ->
-                    locationPermissionsGranted = permissions.values.all { it }
-                    if (locationPermissionsGranted) {
-                        getUserLocation()
-                    } else {
-                        shouldShowLocationPermissionRationale =
-                            shouldShowLocationPermissionRationale()
-                    }
-                })
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainApp(
+    viewModel: MapViewModel,
+    userName: String,
+    onLogout: () -> Unit
+) {
+    val navController = rememberNavController()
+    val screens = listOf(Screen.Map, Screen.Favorites)
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = navBackStackEntry?.destination
 
-            fun requestLocationPermission() {
-                requestLocationPermissionLauncher.launch(
-                    arrayOf(
-                        Manifest.permission.ACCESS_FINE_LOCATION,
-                        Manifest.permission.ACCESS_COARSE_LOCATION
-                    )
-                )
-            }
-
-            CatAgentDeployerTheme {
-
-                val snackbarHostState = remember { SnackbarHostState() }
-
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    snackbarHost = {
-                        SnackbarHost(hostState = snackbarHostState)
-                    }
-                ) { innerPadding ->
-                    val cameraPositionState = rememberSaveable(
-                        currentUserLocation,
-                        saver = CameraPositionState.Saver
-                    ) {
-                        CameraPositionState(
-                            position = CameraPosition
-                                .fromLatLngZoom(currentUserLocation, 15f)
-                        )
-                    }
-                    val markerState = rememberSaveable(
-                        currentUserLocation,
-                        saver = MarkerState.Saver
-                    ) {
-                        MarkerState(position = currentUserLocation)
-                    }
-                    GoogleMap(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding),
-                        cameraPositionState = cameraPositionState,
-                        onMapClick = { latLng ->
-                            markerState.position = latLng
-                        },
-                        // Enable zoom controls and my location button
-                        uiSettings = MapUiSettings(
-                            zoomControlsEnabled = true,
-                            myLocationButtonEnabled = true,
-                            compassEnabled = true,
-                            mapToolbarEnabled = true
-                        ),
-                        // Enable showing user's location
-                        properties = MapProperties(
-                            isMyLocationEnabled = locationPermissionsGranted,
-                            mapType = MapType.NORMAL
-                        )
-                    ) {
-                        if (markerState.position.latitude != 0.0 &&
-                            markerState.position.longitude != 0.0
-                        ) {
-                            val icon by remember {
-                                mutableStateOf(
-                                    getBitmapDescriptorFromVector(
-                                        R.drawable.target_icon
-                                    )
-                                )
-                            }
-                            Marker(
-                                state = markerState,
-                                title = "Deploy Here",
-                                icon = icon
+    Scaffold(
+        containerColor = Color(0xFF0F172A),
+        bottomBar = {
+            NavigationBar(
+                containerColor = Color(0xFF1E293B),
+                tonalElevation = 0.dp
+            ) {
+                screens.forEach { screen ->
+                    val selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
+                    NavigationBarItem(
+                        icon = {
+                            Icon(
+                                if (selected) screen.selectedIcon else screen.unselectedIcon,
+                                contentDescription = screen.label
                             )
-                        }
-                    }
-                    Button(
+                        },
+                        label = {
+                            Text(
+                                screen.label,
+                                fontSize = 12.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                            )
+                        },
+                        selected = selected,
                         onClick = {
-                            if (locationPermissionsGranted) {
-                                getUserLocation()
-                            } else {
-                                shouldShowLocationPermissionRationale =
-                                    shouldShowLocationPermissionRationale()
-                            }
-                            if (!locationPermissionsGranted &&
-                                !shouldShowLocationPermissionRationale
-                            ) {
-                                requestLocationPermission()
+                            navController.navigate(screen.route) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
                             }
                         },
-                        modifier = Modifier.padding(innerPadding)
-                    ) {
-                        Text(text = "Get location (${currentUserLocation})")
-                    }
-
-                    val scope = rememberCoroutineScope()
-
-                    LaunchedEffect(
-                        key1 = shouldShowLocationPermissionRationale,
-                        block = {
-                            if (shouldShowLocationPermissionRationale) {
-                                scope.launch {
-                                    val userAction = snackbarHostState.showSnackbar(
-                                        message = "The app will not work without knowing your precise location",
-                                        actionLabel = "Approve",
-                                        duration = SnackbarDuration.Indefinite,
-                                        withDismissAction = true
-                                    )
-                                    when (userAction) {
-                                        SnackbarResult.ActionPerformed -> {
-                                            requestLocationPermission()
-                                        }
-
-                                        SnackbarResult.Dismissed -> {}
-                                    }
-                                }
-                            }
-                        }
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color(0xFF4285F4),
+                            selectedTextColor = Color(0xFF4285F4),
+                            unselectedIconColor = Color(0xFF64748B),
+                            unselectedTextColor = Color(0xFF64748B),
+                            indicatorColor = Color(0xFF1D3461)
+                        )
                     )
                 }
             }
         }
-    }
-
-    private fun shouldShowLocationPermissionRationale() =
-        shouldShowRequestPermissionRationale(
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        ) || shouldShowRequestPermissionRationale(
-            Manifest.permission.ACCESS_FINE_LOCATION
-        )
-
-    private fun areLocationPermissionsGranted(): Boolean =
-        ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-
-    private fun getBitmapDescriptorFromVector(
-        @DrawableRes vectorDrawableResourceId: Int
-    ): BitmapDescriptor? = ContextCompat.getDrawable(
-        this,
-        vectorDrawableResourceId
-    )?.let { vectorDrawable ->
-        vectorDrawable.setBounds(
-            0,
-            0,
-            vectorDrawable.intrinsicWidth,
-            vectorDrawable.intrinsicHeight
-        )
-        val drawableWithTint = DrawableCompat.wrap(vectorDrawable)
-        DrawableCompat.setTint(drawableWithTint, Color.DKGRAY)
-        val bitmap = createBitmap(vectorDrawable.intrinsicWidth, vectorDrawable.intrinsicHeight)
-        val canvas = Canvas(bitmap)
-        drawableWithTint.draw(canvas)
-        BitmapDescriptorFactory.fromBitmap(bitmap)
-            .also { bitmap.recycle() }
+    ) { paddingValues ->
+        NavHost(
+            navController = navController,
+            startDestination = Screen.Map.route,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            composable(Screen.Map.route) {
+                MapScreen(
+                    viewModel = viewModel,
+                    paddingValues = paddingValues,
+                    userName = userName,
+                    onLogout = onLogout
+                )
+            }
+            composable(Screen.Favorites.route) {
+                FavoritesScreen(
+                    viewModel = viewModel,
+                    paddingValues = paddingValues
+                )
+            }
+        }
     }
 }

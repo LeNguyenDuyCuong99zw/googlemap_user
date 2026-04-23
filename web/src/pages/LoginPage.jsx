@@ -11,6 +11,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 
 // Map Firebase error code → thông báo tiếng Việt
 const FIREBASE_ERRORS = {
@@ -35,16 +36,24 @@ export default function LoginPage() {
   const [name,     setName]     = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [loading,  setLoading]  = useState(false);
+  const [showSplash, setShowSplash] = useState(false);
 
   const { loginWithGoogle, loginWithEmail, registerWithEmail } = useAuth();
   const navigate = useNavigate();
+
+  const startApp = () => {
+    setShowSplash(true);
+    setTimeout(() => {
+      navigate('/map');
+    }, 10000);
+  };
 
   const handleGoogleLogin = async () => {
     setErrorMsg('');
     setLoading(true);
     try {
       await loginWithGoogle();
-      navigate('/map');
+      startApp();
     } catch (err) {
       setErrorMsg(getErrorMsg(err));
     } finally {
@@ -62,7 +71,7 @@ export default function LoginPage() {
       } else {
         await loginWithEmail(email, password);
       }
-      navigate('/map');
+      startApp();
     } catch (err) {
       setErrorMsg(getErrorMsg(err));
     } finally {
@@ -70,12 +79,35 @@ export default function LoginPage() {
     }
   };
 
+  if (showSplash) {
+    return (
+      <div className="auth-page" style={{ background: '#000' }}>
+        <div style={{ width: 400, height: 400 }}>
+          <DotLottieReact
+            src="https://lottie.host/dc20438e-419a-4665-b6d3-2b80f3fc0467/7HYbyxfZnV.lottie"
+            loop
+            autoplay
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="auth-page">
       <div className="auth-card">
-        {/* Header */}
-        <h1 className="auth-card__title">🗺️ GGMap</h1>
-        <p className="auth-card__subtitle">
+        {/* Header Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0' }}>
+          <div style={{ width: 80, height: 80 }}>
+            <DotLottieReact
+              src="https://lottie.host/a10d6761-269f-4700-bdbc-6c7693050caf/SilgbdxVrh.lottie"
+              loop
+              autoplay
+            />
+          </div>
+          <h1 className="auth-card__title" style={{ margin: 0 }}>MAPVIT</h1>
+        </div>
+        <p className="auth-card__subtitle" style={{ textAlign: 'center', marginTop: '8px' }}>
           {isRegister ? 'Tạo tài khoản miễn phí' : 'Chào mừng trở lại!'}
         </p>
 

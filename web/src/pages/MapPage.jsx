@@ -1,105 +1,68 @@
-/**
- * pages/MapPage.jsx — Trang chính với Google Map
- * 
- * Features:
- * - Hiển thị Google Map full-screen
- * - Tìm kiếm địa điểm (Places API)
- * - Lấy chỉ đường (Directions API)
- * - Lưu yêu thích
- * - Lưu lịch sử tìm kiếm tự động
- * - Click vào bản đồ để đặt marker
- */
-
-import { useState, useCallback } from 'react';
-import {
-  APIProvider,
-  Map,
-  Marker,
-  InfoWindow,
-} from '@vis.gl/react-google-maps';
+import { useState, useMemo } from 'react';
+import Map, { Marker, Popup, Source, Layer, GeolocateControl, NavigationControl } from 'react-map-gl/maplibre';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import { useAuth } from '../context/AuthContext';
-import {
-  searchPlaces,
-  getDirections,
-  addFavorite,
-  saveHistory,
-} from '../services/api';
+import { searchPlaces, getDirections, addFavorite, saveHistory } from '../services/api';
+import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 
-const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+const AWS_MAP_API_KEY = import.meta.env.VITE_AWS_MAP_API_KEY;
+const AWS_MAP_NAME = import.meta.env.VITE_AWS_MAP_NAME || 'Map';
+const AWS_REGION = import.meta.env.VITE_AWS_REGION || 'ap-southeast-1';
 
-// Vị trí mặc định: TP. Hồ Chí Minh
+const MAP_STYLE = `https://maps.geo.${AWS_REGION}.amazonaws.com/maps/v0/maps/${AWS_MAP_NAME}/style-descriptor?key=${AWS_MAP_API_KEY}`;
 const DEFAULT_CENTER = { lat: 10.7769, lng: 106.7009 };
 
-// ── Sub-component: Map với Markers ────────────────────
-function MapView({ center, places, selectedPlace, clickedPos, onMapClick, onMarkerClick }) {
+function CustomMarker({ place, isSelected, onClick }) {
   return (
-    <Map
-      defaultCenter={center}
-      defaultZoom={13}
-      gestureHandling="greedy"
-      disableDefaultUI={false}
-      onClick={(e) => onMapClick(e.detail.latLng)}
-      style={{ width: '100%', height: '100%' }}
+    <Marker
+      longitude={place.lng}
+      latitude={place.lat}
+      onClick={(e) => {
+        e.originalEvent.stopPropagation();
+        onClick(place);
+      }}
     >
-      {/* Markers cho kết quả tìm kiếm */}
-      {places.map(place => (
-        <Marker
-          key={place.placeId}
-          position={{ lat: place.lat, lng: place.lng }}
-          title={place.name}
-          onClick={() => onMarkerClick(place)}
-        />
-      ))}
-
-      {/* Marker vị trí click */}
-      {clickedPos && (
-        <Marker
-          position={clickedPos}
-          label="📍"
-        />
-      )}
-
-      {/* InfoWindow cho place được chọn */}
-      {selectedPlace && (
-        <InfoWindow
-          position={{ lat: selectedPlace.lat, lng: selectedPlace.lng }}
-          onCloseClick={() => onMarkerClick(null)}
-        >
-          <div style={{ color: '#111', padding: 4, minWidth: 200 }}>
-            <strong style={{ fontSize: 15 }}>{selectedPlace.name}</strong>
-            <p style={{ margin: '4px 0', fontSize: 12, color: '#666' }}>{selectedPlace.address}</p>
-            {selectedPlace.rating && (
-              <p style={{ fontSize: 12 }}>⭐ {selectedPlace.rating}</p>
-            )}
-          </div>
-        </InfoWindow>
-      )}
-    </Map>
+      <div className={`custom-marker ${isSelected ? 'marker-selected' : ''}`}>
+        <div className="marker-pulse"></div>
+        <div className="marker-core">
+          <DotLottieReact
+            src="https://lottie.host/28afbcf7-aed2-42c2-aa94-65841d0e9c2b/FacU0GmScW.lottie"
+            loop
+            autoplay
+          />
+        </div>
+      </div>
+    </Marker>
   );
 }
 
-// ── Main MapPage ──────────────────────────────────────
 export default function MapPage() {
   const { user, logout } = useAuth();
 
-  // State
-  const [query,        setQuery]        = useState('');
-  const [origin,       setOrigin]       = useState('');
-  const [destination,  setDestination]  = useState('');
-  const [places,       setPlaces]       = useState([]);
-  const [directions,   setDirections]   = useState(null);
+  const [query, setQuery] = useState('');
+  const [origin, setOrigin] = useState('');
+  const [destination, setDestination] = useState('');
+  const [places, setPlaces] = useState([]);
+  const [directions, setDirections] = useState(null);
   const [selectedPlace, setSelectedPlace] = useState(null);
-  const [clickedPos,   setClickedPos]   = useState(null);
-  const [activeTab,    setActiveTab]    = useState('search'); // 'search' | 'directions'
-  const [loading,      setLoading]      = useState(false);
-  const [toast,        setToast]        = useState('');
+  const [clickedPos, setClickedPos] = useState(null);
+  const [activeTab, setActiveTab] = useState('search');
+  const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState('');
+  const [suggestions, setSuggestions] = useState({ origin: [], destination: [] });
+  const [activeInput, setActiveInput] = useState(null); // 'origin' or 'destination'
+
+  const [viewState, setViewState] = useState({
+    longitude: DEFAULT_CENTER.lng,
+    latitude: DEFAULT_CENTER.lat,
+    zoom: 13
+  });
 
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
   };
 
-  // ── Tìm kiếm địa điểm ────────────────────────────
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!query.trim()) return;
@@ -107,11 +70,19 @@ export default function MapPage() {
     try {
       const data = await searchPlaces(query);
       setPlaces(data.places || []);
+      
+      if (data.places && data.places.length > 0) {
+        setViewState(prev => ({
+          ...prev,
+          longitude: data.places[0].lng,
+          latitude: data.places[0].lat,
+          zoom: 14,
+          transitionDuration: 1200
+        }));
+      }
 
-      // Tự động lưu lịch sử
       await saveHistory({ query, name: query });
-
-      if (data.places.length === 0) showToast('Không tìm thấy kết quả nào');
+      if (data.places.length === 0) showToast('Không tìm thấy địa điểm');
     } catch (err) {
       showToast(err.message);
     } finally {
@@ -119,7 +90,31 @@ export default function MapPage() {
     }
   };
 
-  // ── Lấy chỉ đường ────────────────────────────────
+  const handleInputChange = async (type, val) => {
+    if (type === 'origin') setOrigin(val);
+    else setDestination(val);
+
+    if (val.length > 2) {
+      try {
+        const data = await searchPlaces(val);
+        setSuggestions(prev => ({ ...prev, [type]: data.places || [] }));
+        setActiveInput(type);
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      setSuggestions(prev => ({ ...prev, [type]: [] }));
+    }
+  };
+
+  const selectSuggestion = (type, place) => {
+    const coords = `${place.lat},${place.lng}`;
+    if (type === 'origin') setOrigin(coords);
+    else setDestination(coords);
+    setSuggestions(prev => ({ ...prev, [type]: [] }));
+    setActiveInput(null);
+  };
+
   const handleDirections = async (e) => {
     e.preventDefault();
     if (!origin || !destination) return;
@@ -127,7 +122,17 @@ export default function MapPage() {
     try {
       const data = await getDirections(origin, destination);
       setDirections(data);
-      setPlaces([]); // Xóa markers tìm kiếm
+      setPlaces([]); 
+      
+      if (data.geometry && data.geometry.length > 0) {
+        setViewState(prev => ({
+          ...prev,
+          longitude: data.geometry[0][0],
+          latitude: data.geometry[0][1],
+          zoom: 13,
+          transitionDuration: 1200
+        }));
+      }
     } catch (err) {
       showToast(err.message);
     } finally {
@@ -135,7 +140,6 @@ export default function MapPage() {
     }
   };
 
-  // ── Lưu yêu thích ────────────────────────────────
   const handleSaveFavorite = async (place) => {
     try {
       await addFavorite({
@@ -145,216 +149,336 @@ export default function MapPage() {
         lat: place.lat,
         lng: place.lng,
       });
-      showToast(`✅ Đã lưu "${place.name}" vào yêu thích`);
+      showToast(`🤍 Đã lưu "${place.name}"`);
     } catch (err) {
       showToast(err.message);
     }
   };
 
-  const handleMapClick = useCallback((latLng) => {
-    setClickedPos(latLng);
-    setSelectedPlace(null);
-  }, []);
-
-  const handleMarkerClick = useCallback((place) => {
-    setSelectedPlace(place);
-  }, []);
+  const routeGeojson = useMemo(() => {
+    if (!directions?.geometry) return null;
+    return {
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: directions.geometry }
+    };
+  }, [directions]);
 
   return (
-    <APIProvider
-      apiKey={MAPS_API_KEY}
-      libraries={['places', 'geometry']}
-      onLoad={() => console.log('✅ Google Maps loaded')}
-      onError={(e) => console.error('❌ Maps error:', e)}
-    >
-      <div className="app-layout">
-        {/* ── Sidebar ──────────────────────────────── */}
-        <aside className="sidebar">
-          {/* Header */}
-          <div className="sidebar__header">
-            <span style={{ fontSize: 24 }}>🗺️</span>
-            <div style={{ flex: 1 }}>
-              <div className="sidebar__logo">GGMap</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                {user?.displayName || user?.email}
+    <div className="map-app-container">
+      {/* ── MAP LAYER ───────────────────────────────── */}
+      <div className="map-layer">
+        <Map
+          {...viewState}
+          onMove={evt => setViewState(evt.viewState)}
+          mapStyle={MAP_STYLE}
+          onClick={(e) => {
+            if (e.lngLat) {
+              setClickedPos({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+              setSelectedPlace(null);
+              setPlaces([]); // Xóa danh sách tìm kiếm khi chọn điểm mới trên bản đồ
+            }
+          }}
+        >
+          <GeolocateControl 
+            position="bottom-right" 
+            trackUserLocation={true} 
+            onGeolocate={(e) => {
+              // Khi định vị được vị trí người dùng, cập nhật viewState để bản đồ di chuyển tới đó
+              setViewState(prev => ({
+                ...prev,
+                longitude: e.coords.longitude,
+                latitude: e.coords.latitude,
+                zoom: 15,
+                transitionDuration: 1000
+              }));
+            }}
+          />
+          <NavigationControl position="bottom-right" showCompass={false} />
+
+          {selectedPlace && (
+            <Popup
+              longitude={selectedPlace.lng}
+              latitude={selectedPlace.lat}
+              anchor="top"
+              onClose={() => setSelectedPlace(null)}
+              closeButton={false}
+              maxWidth="300px"
+            >
+              <div className="modern-popup">
+                <div className="popup-name">{selectedPlace.name}</div>
+                <div className="popup-address">{selectedPlace.address}</div>
+                <div className="popup-actions">
+                  <button className="popup-btn" onClick={() => {
+                    setOrigin('Vị trí của bạn');
+                    setDestination(`${selectedPlace.lat},${selectedPlace.lng}`);
+                    setActiveTab('directions');
+                  }}>
+                    Chỉ đường
+                  </button>
+                </div>
+              </div>
+            </Popup>
+          )}
+
+          {places.map(place => (
+            <CustomMarker
+              key={place.placeId}
+              place={place}
+              isSelected={selectedPlace?.placeId === place.placeId}
+              onClick={(p) => {
+                setSelectedPlace(p);
+                setClickedPos(null); // Xóa điểm click thủ công khi chọn một kết quả tìm kiếm
+                setViewState(prev => ({
+                  ...prev,
+                  longitude: p.lng,
+                  latitude: p.lat,
+                  zoom: 15,
+                  transitionDuration: 1000
+                }));
+              }}
+            />
+          ))}
+
+          {clickedPos && (
+            <Marker longitude={clickedPos.lng} latitude={clickedPos.lat}>
+              <div style={{ fontSize: '24px', filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.5))' }}>📍</div>
+            </Marker>
+          )}
+
+          {routeGeojson && (
+            <Source id="route-source" type="geojson" data={routeGeojson}>
+              <Layer
+                id="route-layer"
+                type="line"
+                layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+                paint={{
+                  'line-color': '#EAFF00',
+                  'line-width': 6,
+                  'line-opacity': 0.8
+                }}
+              />
+            </Source>
+          )}
+        </Map>
+      </div>
+
+      {/* ── UI LAYER ────────────────────────────────── */}
+      <div className="ui-layer">
+          <div className="floating-widget-container">
+            <div className="floating-widget-panel">
+              <div style={{ width: 120, height: 120 }}>
+                <DotLottieReact
+                  src="https://lottie.host/59ef4efc-bad7-4d4b-bf67-88638a7d6d3b/9MJF1B7EEV.lottie"
+                  loop
+                  autoplay
+                />
+              </div>
+              <div className="widget-info">
+                <div className="widget-title">THÔNG TIN THỜI TIẾT</div>
+                <div className="widget-status">Đang hoạt động ✦</div>
               </div>
             </div>
-            <button
-              id="btn-logout"
-              className="btn btn-ghost"
-              onClick={logout}
-              style={{ padding: '6px 10px', fontSize: 12 }}
-            >
-              Thoát
-            </button>
           </div>
 
-          <div className="sidebar__content">
-            {/* Tabs */}
-            <div className="tabs">
-              <button
-                className={`tab-btn ${activeTab === 'search' ? 'active' : ''}`}
-                onClick={() => setActiveTab('search')}
-              >
-                🔍 Tìm kiếm
-              </button>
-              <button
-                className={`tab-btn ${activeTab === 'directions' ? 'active' : ''}`}
-                onClick={() => setActiveTab('directions')}
-              >
-                🧭 Chỉ đường
+          <div className="floating-panel">
+          
+          <div className="panel-header">
+            <div className="brand-header-row">
+              <div className="brand-logo" style={{ gap: '4px' }}>
+                <div style={{ width: 40, height: 40 }}>
+                  <DotLottieReact
+                    src="https://lottie.host/a10d6761-269f-4700-bdbc-6c7693050caf/SilgbdxVrh.lottie"
+                    loop
+                    autoplay
+                  />
+                </div>
+                <span>MAPVIT</span>
+              </div>
+              <button className="btn-icon-sm" onClick={logout} title="Đăng xuất">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
               </button>
             </div>
+            
+            <div className="pill-tabs">
+              <button 
+                className={`pill-tab ${activeTab === 'search' ? 'active' : ''}`}
+                onClick={() => setActiveTab('search')}
+              >
+                Tìm kiếm
+              </button>
+              <button 
+                className={`pill-tab ${activeTab === 'directions' ? 'active' : ''}`}
+                onClick={() => setActiveTab('directions')}
+              >
+                Chỉ đường
+              </button>
+            </div>
+          </div>
 
-            {/* ── Tab: Tìm kiếm ──────────────────── */}
+          <div className="panel-content">
             {activeTab === 'search' && (
-              <div className="card">
-                <div className="card__title">Tìm địa điểm</div>
-                <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <form onSubmit={handleSearch} className="modern-search-row">
+                <div className="modern-input-wrapper">
                   <input
-                    id="input-search-query"
-                    className="input"
                     type="text"
-                    placeholder="Café, bệnh viện, ATM..."
+                    className="modern-input"
+                    placeholder="Tìm địa điểm, cà phê..."
+                    style={{ paddingLeft: '16px' }}
                     value={query}
                     onChange={e => setQuery(e.target.value)}
                   />
-                  <button
-                    id="btn-search"
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={loading || !query.trim()}
-                  >
-                    {loading ? <span className="spinner" style={{ borderTopColor: '#fff' }} /> : 'Tìm'}
-                  </button>
-                </form>
-              </div>
-            )}
-
-            {/* ── Tab: Chỉ đường ─────────────────── */}
-            {activeTab === 'directions' && (
-              <div className="card">
-                <div className="card__title">Tìm đường đi</div>
-                <form onSubmit={handleDirections} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <input
-                    id="input-origin"
-                    className="input"
-                    type="text"
-                    placeholder="Điểm xuất phát"
-                    value={origin}
-                    onChange={e => setOrigin(e.target.value)}
-                  />
-                  <input
-                    id="input-destination"
-                    className="input"
-                    type="text"
-                    placeholder="Điểm đến"
-                    value={destination}
-                    onChange={e => setDestination(e.target.value)}
-                  />
-                  <button
-                    id="btn-get-directions"
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={loading || !origin || !destination}
-                  >
-                    {loading ? <span className="spinner" style={{ borderTopColor: '#fff' }} /> : 'Tìm đường'}
-                  </button>
-                </form>
-
-                {/* Kết quả chỉ đường */}
-                {directions && (
-                  <div style={{ marginTop: 16 }}>
-                    <div className="directions-info">
-                      <div className="directions-stat">
-                        <span className="directions-stat__value">{directions.distance?.text}</span>
-                        <span className="directions-stat__label">Khoảng cách</span>
-                      </div>
-                      <div className="directions-stat">
-                        <span className="directions-stat__value">{directions.duration?.text}</span>
-                        <span className="directions-stat__label">Thời gian</span>
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      <p>📍 {directions.startAddress}</p>
-                      <p style={{ marginTop: 4 }}>🏁 {directions.endAddress}</p>
-                    </div>
+                </div>
+                <button type="submit" className="btn-lottie-search" disabled={loading || !query.trim()}>
+                  <div style={{ width: 44, height: 44 }}>
+                    <DotLottieReact
+                      src="https://lottie.host/30d42053-e9dc-425e-a36e-383873fc86ac/ZDCzXZTXU2.lottie"
+                      loop
+                      autoplay
+                    />
                   </div>
-                )}
-              </div>
+                </button>
+              </form>
             )}
 
-            {/* ── Kết quả tìm kiếm ───────────────── */}
-            {places.length > 0 && (
-              <div className="card">
-                <div className="card__title">
-                  {places.length} kết quả
-                  <button
-                    className="btn btn-ghost"
-                    onClick={() => setPlaces([])}
-                    style={{ float: 'right', padding: '2px 8px', fontSize: 12 }}
-                  >
-                    Xóa
-                  </button>
-                </div>
-                <div className="place-list">
-                  {places.map((place, idx) => (
-                    <div
-                      key={place.placeId || idx}
-                      className="place-item"
-                      onClick={() => setSelectedPlace(place)}
-                    >
-                      <div className="place-item__icon">📍</div>
-                      <div className="place-item__info">
-                        <div className="place-item__name">{place.name}</div>
-                        <div className="place-item__addr">{place.address}</div>
-                        {place.rating && (
-                          <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 2 }}>
-                            ⭐ {place.rating}
+            {activeTab === 'directions' && (
+              <form onSubmit={handleDirections} className="modern-input-group">
+                <div style={{ position: 'relative' }}>
+                  <div className="modern-input-wrapper">
+                    <input
+                      type="text"
+                      className="modern-input"
+                      placeholder="Điểm xuất phát..."
+                      style={{ paddingLeft: '16px' }}
+                      value={origin}
+                      onChange={e => handleInputChange('origin', e.target.value)}
+                    />
+                  </div>
+                  {activeInput === 'origin' && suggestions.origin.length > 0 && (
+                    <div className="suggestions-dropdown">
+                      {suggestions.origin.map(p => (
+                        <div key={p.placeId} className="suggestion-item" onClick={() => selectSuggestion('origin', p)}>
+                          <div className="suggestion-lottie">
+                            <DotLottieReact
+                              src="https://lottie.host/28afbcf7-aed2-42c2-aa94-65841d0e9c2b/FacU0GmScW.lottie"
+                              loop
+                              autoplay
+                            />
                           </div>
-                        )}
-                      </div>
-                      <button
-                        id={`btn-save-fav-${idx}`}
-                        className="btn btn-ghost place-item__action"
-                        style={{ fontSize: 18, padding: 4 }}
-                        title="Lưu yêu thích"
-                        onClick={(e) => { e.stopPropagation(); handleSaveFavorite(place); }}
-                      >
-                        🤍
-                      </button>
+                          <div className="suggestion-info">
+                            <div className="suggestion-name">{p.name}</div>
+                            {p.address && <div className="suggestion-address">{p.address}</div>}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                  <div className="modern-input-wrapper">
+                    <input
+                      type="text"
+                      className="modern-input"
+                      placeholder="Điểm đến..."
+                      style={{ paddingLeft: '16px' }}
+                      value={destination}
+                      onChange={e => handleInputChange('destination', e.target.value)}
+                    />
+                  </div>
+                  {activeInput === 'destination' && suggestions.destination.length > 0 && (
+                    <div className="suggestions-dropdown">
+                      {suggestions.destination.map(p => (
+                        <div key={p.placeId} className="suggestion-item" onClick={() => selectSuggestion('destination', p)}>
+                          <div className="suggestion-lottie">
+                            <DotLottieReact
+                              src="https://lottie.host/28afbcf7-aed2-42c2-aa94-65841d0e9c2b/FacU0GmScW.lottie"
+                              loop
+                              autoplay
+                            />
+                          </div>
+                          <div className="suggestion-info">
+                            <div className="suggestion-name">{p.name}</div>
+                            {p.address && <div className="suggestion-address">{p.address}</div>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                <button type="submit" className="btn-art" disabled={loading || !origin || !destination}>
+                  {loading ? 'Đang tính toán...' : 'Chỉ đường đi'}
+                </button>
+              </form>
+            )}
+
+            {directions && (
+              <div className="route-summary">
+                <div className="route-stat">
+                  <div className="route-val">{directions.distance?.text}</div>
+                  <div className="route-lbl">Khoảng cách</div>
+                </div>
+                <div className="route-stat">
+                  <div className="route-val">{directions.duration?.text}</div>
+                  <div className="route-lbl">Thời gian</div>
                 </div>
               </div>
             )}
 
-            {/* Clicked position info */}
-            {clickedPos && (
-              <div className="card" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                <div className="card__title">Vị trí đã chọn</div>
-                <p>Lat: {clickedPos.lat.toFixed(6)}</p>
-                <p>Lng: {clickedPos.lng.toFixed(6)}</p>
+            {/* Empty State / Welcome Animation for Search Tab */}
+            {activeTab === 'search' && places.length === 0 && !clickedPos && !loading && (
+              <div className="search-empty-state">
+                <div style={{ width: 300, height: 300 }}>
+                  <DotLottieReact
+                    src="https://lottie.host/4b1ad8af-d769-4676-a2d6-686a7cc49d82/yF3dvgO9XZ.lottie"
+                    loop
+                    autoplay
+                  />
+                </div>
+                <div className="empty-state-text">
+                  Bắt đầu khám phá thế giới cùng MAPVIT
+                </div>
+              </div>
+            )}
+
+            {places.length > 0 && (
+              <div className="results-container">
+                <div className="results-header">
+                  <span>{places.length} KẾT QUẢ</span>
+                  <span style={{cursor: 'pointer', color: '#3A82F7'}} onClick={() => setPlaces([])}>Xóa</span>
+                </div>
+                {places.map(place => (
+                  <div 
+                    key={place.placeId} 
+                    className="art-place-item"
+                    onClick={() => {
+                      setSelectedPlace(place);
+                      setViewState(prev => ({
+                        ...prev, longitude: place.lng, latitude: place.lat, zoom: 15, transitionDuration: 1000
+                      }));
+                    }}
+                  >
+                    <div className="place-icon-wrap">✧</div>
+                    <div className="place-info">
+                      <div className="place-name">{place.name}</div>
+                      <div className="place-addr">{place.address}</div>
+                    </div>
+                    <button 
+                      className="btn-icon" 
+                      onClick={(e) => { e.stopPropagation(); handleSaveFavorite(place); }}
+                      title="Lưu yêu thích"
+                    >
+                      ♡
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
-        </aside>
-
-        {/* ── Map ──────────────────────────────────── */}
-        <main className="map-container">
-          <MapView
-            center={DEFAULT_CENTER}
-            places={places}
-            selectedPlace={selectedPlace}
-            clickedPos={clickedPos}
-            onMapClick={handleMapClick}
-            onMarkerClick={handleMarkerClick}
-          />
-        </main>
+        </div>
       </div>
 
-      {/* Toast notification */}
-      {toast && <div className="toast">{toast}</div>}
-    </APIProvider>
+      {toast && <div className="art-toast">{toast}</div>}
+    </div>
   );
 }

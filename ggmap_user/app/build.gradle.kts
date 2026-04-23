@@ -66,6 +66,15 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(libs.google.maps.compose)
     implementation("com.google.android.gms:play-services-maps:18.2.0")
+    implementation("com.google.maps.android:android-maps-utils:3.8.2")
+
+    // MapLibre (AWS Map rendering)
+    implementation("org.maplibre.gl:android-sdk:11.5.1")
+
+    // ViewModel + Navigation Compose
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
+    implementation("androidx.navigation:navigation-compose:2.7.7")
+    implementation("androidx.compose.material:material-icons-extended")
 
     // Firebase (BOM quản lý version tự động)
     implementation(platform("com.google.firebase:firebase-bom:33.1.0"))

@@ -9,6 +9,8 @@
     "test": "jest --runInBand"
   },
   "dependencies": {
+    "@aws-sdk/client-location": "^3.1035.0",
+    "@google-cloud/storage": "^7.19.0",
     "axios": "^1.7.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -16,7 +18,8 @@
     "express-rate-limit": "^7.3.1",
     "firebase-admin": "^12.1.0",
     "helmet": "^7.1.0",
-    "morgan": "^1.10.0"
+    "morgan": "^1.10.0",
+    "multer": "^2.1.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",
