@@ -134,6 +134,13 @@ class MapViewModel : ViewModel() {
                         ?.map { coord -> LatLng(coord[1], coord[0]) }
                         ?: emptyList()
                     _polylinePoints.value = points
+                    // Lưu lịch sử chỉ đường sang AWS Cloud
+                    try { 
+                        RetrofitClient.api.saveHistory(
+                            token, 
+                            SaveHistoryRequest("Route: ${_origin.value} to ${_destination.value}", "Directions to ${_destination.value}")
+                        ) 
+                    } catch (_: Exception) {}
                 } else {
                     showToast("Lỗi chỉ đường (${response.code()})")
                 }

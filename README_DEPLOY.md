@@ -1,14 +1,16 @@
 # ============================================================
+
 # README DEPLOY — Hướng dẫn triển khai lên Google Cloud
+
 # ============================================================
 
 ## YÊU CẦU TRƯỚC KHI DEPLOY
 
-- [x] Google Cloud account có billing enabled
-- [x] `gcloud` CLI đã cài và đăng nhập
-- [x] Docker Desktop (để build image local, tùy chọn)
-- [x] Firebase project đã tạo
-- [x] Google Maps API key đã tạo
+- [X] Google Cloud account có billing enabled
+- [X] `gcloud` CLI đã cài và đăng nhập
+- [X] Docker Desktop (để build image local, tùy chọn)
+- [X] Firebase project đã tạo
+- [X] Google Maps API key đã tạo
 
 ---
 
@@ -145,11 +147,13 @@ gcloud run services describe ggmap-backend \
 Sau khi có Cloud Run URL, cập nhật:
 
 **Web** (`web/.env.local`):
+
 ```
 VITE_API_BASE_URL=https://ggmap-backend-xxxxx-as.a.run.app
 ```
 
 **Android** (`RetrofitClient.kt`):
+
 ```kotlin
 private const val BASE_URL = "https://ggmap-backend-xxxxx-as.a.run.app/"
 ```
@@ -207,13 +211,13 @@ Trong **Firebase Console**:
 
 ## CẤU TRÚC CHI PHÍ GOOGLE CLOUD (FREE TIER)
 
-| Dịch vụ | Free Tier | Ghi chú |
-|---------|-----------|---------|
-| Cloud Run | 2M req/tháng | Đủ cho demo |
-| Firestore | 50K read/ngày | Đủ cho dev |
-| Maps Platform | $200 credit/tháng | Khoảng 28K req |
-| Firebase Auth | 10K users free | |
-| Firebase Hosting | 10GB/tháng | |
+| Dịch vụ        | Free Tier          | Ghi chú        |
+| ---------------- | ------------------ | --------------- |
+| Cloud Run        | 2M req/tháng      | Đủ cho demo   |
+| Firestore        | 50K read/ngày     | Đủ cho dev    |
+| Maps Platform    | $200 credit/tháng | Khoảng 28K req |
+| Firebase Auth    | 10K users free     |                 |
+| Firebase Hosting | 10GB/tháng        |                 |
 
 **→ Demo + dev hoàn toàn miễn phí!**
 
@@ -222,20 +226,33 @@ Trong **Firebase Console**:
 ## TROUBLESHOOTING
 
 ### Backend không start
+
 ```bash
 # Xem logs
 gcloud run services logs read ggmap-backend --region asia-southeast1
 ```
 
-### Firebase Admin error
+### Firebase Admin errorv  
+
+C:\gg-map\googlemap_user\backend>node test_aws.js
+🚀 Đang thử gọi API của bạn...
+✅ Thành công! Phản hồi từ Lambda: {
+  message: 'Cloud Log saved successfully to DynamoDB',
+  logId: '1776972324053_embxcu8'
+}
+
+C:\gg-map\googlemap_user\backend>
+
 - Kiểm tra FIREBASE_PRIVATE_KEY có đúng format (có `\n`) không
 - Kiểm tra service account có quyền Firestore Editor không
 
 ### CORS error từ Web
+
 - Kiểm tra ALLOWED_ORIGINS trong env vars Cloud Run
 - Thêm domain web đúng format (có https://)
 
 ### Google Maps không load
+
 - Kiểm tra API key đã bật đúng APIs chưa:
   - Maps JavaScript API
   - Places API

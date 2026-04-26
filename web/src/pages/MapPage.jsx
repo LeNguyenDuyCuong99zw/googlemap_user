@@ -124,6 +124,12 @@ export default function MapPage() {
       setDirections(data);
       setPlaces([]); 
       
+      // Gửi log Cloud khi tìm đường thành công
+      await saveHistory({ 
+        query: `Route: ${origin} to ${destination}`, 
+        name: `Directions to ${destination}` 
+      });
+
       if (data.geometry && data.geometry.length > 0) {
         setViewState(prev => ({
           ...prev,

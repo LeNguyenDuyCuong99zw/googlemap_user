@@ -38,7 +38,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            CatAgentDeployerTheme(darkTheme = true) {
+            CatAgentDeployerTheme {
                 GGMapApp()
             }
         }
@@ -89,10 +89,10 @@ fun MainApp(
     val currentDestination = navBackStackEntry?.destination
 
     Scaffold(
-        containerColor = Color(0xFF0F172A),
+        containerColor = Color.Black,
         bottomBar = {
             NavigationBar(
-                containerColor = Color(0xFF1E293B),
+                containerColor = Color(0xFF050505),
                 tonalElevation = 0.dp
             ) {
                 screens.forEach { screen ->
@@ -120,11 +120,11 @@ fun MainApp(
                             }
                         },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF4285F4),
-                            selectedTextColor = Color(0xFF4285F4),
-                            unselectedIconColor = Color(0xFF64748B),
-                            unselectedTextColor = Color(0xFF64748B),
-                            indicatorColor = Color(0xFF1D3461)
+                            selectedIconColor = Color(0xFFEAFF00),
+                            selectedTextColor = Color(0xFFEAFF00),
+                            unselectedIconColor = Color.White.copy(alpha = 0.4f),
+                            unselectedTextColor = Color.White.copy(alpha = 0.4f),
+                            indicatorColor = Color(0xFF1A1A1A)
                         )
                     )
                 }

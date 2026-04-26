@@ -5,8 +5,29 @@
  */
 
 const { db } = require('../config/firebase');
+const axios = require('axios'); // Đã có trong package.json
 
-const MAX_HISTORY = 50; // Giữ tối đa 50 lịch sử / user
+const MAX_HISTORY = 50; 
+
+/**
+ * cloudLogger — Gửi log sang AWS Lambda (Dành cho báo cáo đề tài)
+ */
+async function cloudLogger(data) {
+  const AWS_LAMBDA_URL = process.env.AWS_CLOUD_LOG_URL;
+  
+  if (!AWS_LAMBDA_URL) {
+    console.log('☁️ [AWS Cloud] Chưa cấu hình URL. Bỏ qua gửi log cloud.');
+    return;
+  }
+
+  try {
+    console.log('☁️ [AWS Cloud] Đang gửi log sang Lambda...');
+    await axios.post(AWS_LAMBDA_URL, data, { timeout: 3000 });
+    console.log('☁️ [AWS Cloud] Đã lưu log thành công vào DynamoDB.');
+  } catch (err) {
+    console.error('☁️ [AWS Cloud] Lỗi gửi log:', err.message);
+  }
+}
 
 /**
  * getHistory — Lấy lịch sử tìm kiếm của user
@@ -38,7 +59,7 @@ async function getHistory(req, res, next) {
 }
 
 /**
- * saveHistory — Lưu một lịch sử tìm kiếm
+ * saveHistory — Lưu một lịch sử tìm kiếm (Firebase + AWS Cloud)
  * POST /history
  * Body: { query, placeId?, name, lat?, lng? }
  */
@@ -54,31 +75,49 @@ async function saveHistory(req, res, next) {
     const userRef     = db.collection('users').doc(uid);
     const historyRef  = userRef.collection('history');
 
-    // Lưu record mới
-    const docRef = await historyRef.add({
-      query:      query || name,
-      placeId:    placeId || null,
-      name:       name    || query,
-      lat:        lat     || null,
-      lng:        lng     || null,
-      searchedAt: new Date(),
-    });
-
-    // Tự động dọn record cũ nếu vượt giới hạn
-    const countSnap = await historyRef.count().get();
-    if (countSnap.data().count > MAX_HISTORY) {
-      const oldestSnap = await historyRef
-        .orderBy('searchedAt', 'asc')
-        .limit(1)
-        .get();
-      if (!oldestSnap.empty) {
-        await oldestSnap.docs[0].ref.delete();
-      }
+    // 1. Lưu vào Firebase (Hệ thống cũ)
+    let firebaseHistoryId = null;
+    try {
+      const docRef = await historyRef.add({
+        query:      query || name,
+        placeId:    placeId || null,
+        name:       name    || query,
+        lat:        lat     || null,
+        lng:        lng     || null,
+        searchedAt: new Date(),
+      });
+      firebaseHistoryId = docRef.id;
+    } catch (fbErr) {
+      console.error('⚠️ [Firebase] Lỗi lưu lịch sử:', fbErr.message);
+      // Không ném lỗi (next) ở đây để AWS vẫn có thể chạy tiếp
     }
 
+    // 2. Gửi sang AWS Cloud (Hệ thống mới - Ưu tiên hàng đầu cho báo cáo)
+    cloudLogger({
+      userId: uid,
+      query: query || name,
+      name: name || query,
+      lat,
+      lng
+    });
+
+    // Tự động dọn record cũ trong Firebase (chỉ chạy nếu historyRef vẫn ổn)
+    try {
+      const countSnap = await historyRef.count().get();
+      if (countSnap.data().count > MAX_HISTORY) {
+        const oldestSnap = await historyRef
+          .orderBy('searchedAt', 'asc')
+          .limit(1)
+          .get();
+        if (!oldestSnap.empty) {
+          await oldestSnap.docs[0].ref.delete();
+        }
+      }
+    } catch (e) { /* ignore */ }
+
     res.status(201).json({
-      message:   'Đã lưu lịch sử',
-      historyId: docRef.id,
+      message:   firebaseHistoryId ? 'Đã lưu lịch sử (Firebase + Cloud Log)' : 'Đã lưu Cloud Log (Firebase tạm lỗi)',
+      historyId: firebaseHistoryId,
     });
   } catch (err) {
     next(err);

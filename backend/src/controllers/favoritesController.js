@@ -7,6 +7,27 @@
  */
 
 const { db } = require('../config/firebase');
+const axios = require('axios');
+
+/**
+ * cloudLogger — Gửi log sang AWS Lambda (Dành cho báo cáo đề tài)
+ */
+async function cloudLogger(data) {
+  const AWS_LAMBDA_URL = process.env.AWS_CLOUD_LOG_URL;
+  
+  if (!AWS_LAMBDA_URL) {
+    console.log('☁️ [AWS Cloud] Chưa cấu hình URL. Bỏ qua gửi log cloud.');
+    return;
+  }
+
+  try {
+    console.log(`☁️ [AWS Cloud] Đang gửi log ${data.actionType} sang Lambda...`);
+    await axios.post(AWS_LAMBDA_URL, data, { timeout: 3000 });
+    console.log('☁️ [AWS Cloud] Đã lưu log thành công vào DynamoDB.');
+  } catch (err) {
+    console.error('☁️ [AWS Cloud] Lỗi gửi log:', err.message);
+  }
+}
 
 /**
  * getFavorites — Lấy danh sách địa điểm yêu thích của user đang login
@@ -53,36 +74,52 @@ async function addFavorite(req, res, next) {
       });
     }
 
-    // Kiểm tra đã lưu chưa (tránh duplicate)
-    const existing = await db
-      .collection('users')
-      .doc(uid)
-      .collection('favorites')
-      .where('placeId', '==', placeId)
-      .limit(1)
-      .get();
+    // 1. Lưu vào Firebase (Hệ thống cũ)
+    let firebaseFavoriteId = null;
+    try {
+        // Kiểm tra đã lưu chưa (tránh duplicate)
+        const existing = await db
+        .collection('users')
+        .doc(uid)
+        .collection('favorites')
+        .where('placeId', '==', placeId)
+        .limit(1)
+        .get();
 
-    if (!existing.empty) {
-      return res.status(409).json({ error: 'Địa điểm đã trong danh sách yêu thích' });
+        if (existing.empty) {
+            const docRef = await db
+            .collection('users')
+            .doc(uid)
+            .collection('favorites')
+            .add({
+                placeId,
+                name,
+                address: address || '',
+                lat:     lat    || null,
+                lng:     lng    || null,
+                savedAt: new Date(),
+            });
+            firebaseFavoriteId = docRef.id;
+        } else {
+            firebaseFavoriteId = existing.docs[0].id;
+        }
+    } catch (fbErr) {
+        console.error('⚠️ [Firebase] Lỗi lưu favorites:', fbErr.message);
     }
 
-    // Lưu vào Firestore
-    const docRef = await db
-      .collection('users')
-      .doc(uid)
-      .collection('favorites')
-      .add({
-        placeId,
-        name,
-        address: address || '',
-        lat:     lat    || null,
-        lng:     lng    || null,
-        savedAt: new Date(),        // Firestore sẽ lưu dạng Timestamp
-      });
+    // 2. Gửi sang AWS Cloud (Hệ thống mới)
+    cloudLogger({
+        userId: uid,
+        actionType: 'FAVORITE',
+        query: `Favorite: ${name}`,
+        name: name,
+        lat,
+        lng
+    });
 
     res.status(201).json({
-      message:    'Đã thêm vào yêu thích',
-      favoriteId: docRef.id,
+      message:    firebaseFavoriteId ? 'Đã thêm vào yêu thích (Firebase + Cloud Log)' : 'Đã lưu Cloud Log (Firebase lỗi)',
+      favoriteId: firebaseFavoriteId,
     });
   } catch (err) {
     next(err);
@@ -107,7 +144,7 @@ async function removeFavorite(req, res, next) {
     const doc = await docRef.get();
 
     if (!doc.exists) {
-      return res.status(404).json({ error: 'Tidak ditemukan' });
+      return res.status(404).json({ error: 'Không tìm thấy' });
     }
 
     await docRef.delete();

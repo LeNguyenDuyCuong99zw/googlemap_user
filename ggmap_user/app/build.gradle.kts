@@ -89,6 +89,9 @@ dependencies {
     // Kotlinx Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
 
+    // Lottie
+    implementation("com.airbnb.android:lottie-compose:6.4.1")
+
     // Test
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
